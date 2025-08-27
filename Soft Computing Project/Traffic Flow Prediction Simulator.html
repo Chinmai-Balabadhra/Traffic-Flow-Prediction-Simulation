@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Traffic Flow Prediction Simulation</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f0f0;
+            background-image: linear-gradient(45deg, #f3f3f3 25%, transparent 25%),
+                            linear-gradient(-45deg, #f3f3f3 25%, transparent 25%),
+                            linear-gradient(45deg, transparent 75%, #f3f3f3 75%),
+                            linear-gradient(-45deg, transparent 75%, #f3f3f3 75%);
+            background-size: 20px 20px;
+            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.1);
+        }
+        .simulation-area {
+            width: 100%;
+            height: 400px;
+            border: 2px solid #333;
+            margin: 20px 0;
+            position: relative;
+            background-color: #2c3e50;
+            overflow: hidden;
+            border-radius: 10px;
+            perspective: 1000px;
+        }
+        .road {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(to bottom, #34495e, #2c3e50);
+            transform-style: preserve-3d;
+        }
+        .road::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: repeating-linear-gradient(
+                90deg,
+                #fff 0px,
+                #fff 20px,
+                transparent 20px,
+                transparent 40px
+            );
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+        .road::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%),
+                repeating-linear-gradient(
+                    90deg,
+                    transparent 0px,
+                    transparent 50px,
+                    rgba(255,255,255,0.05) 50px,
+                    rgba(255,255,255,0.05) 100px
+                );
+            animation: roadMove 20s linear infinite;
+        }
+        @keyframes roadMove {
+            0% { background-position: 0 0; }
+            100% { background-position: 100px 0; }
+        }
+        .lane {
+            position: absolute;
+            width: 100%;
+            height: 40px;
+            border-bottom: 2px dashed rgba(255, 255, 255, 0.3);
+            background: rgba(255, 255, 255, 0.05);
+            z-index: 1;
+        }
+        .lane:nth-child(1) { top: 30%; }
+        .lane:nth-child(2) { top: 70%; }
+        .lane::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: repeating-linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0.5) 0px,
+                rgba(255, 255, 255, 0.5) 10px,
+                transparent 10px,
+                transparent 20px
+            );
+            transform: translateY(-50%);
+        }
+        .lane-divider {
+            position: absolute;
+            width: 100%;
+            height: 4px;
+            background: repeating-linear-gradient(
+                90deg,
+                #fff 0px,
+                #fff 20px,
+                transparent 20px,
+                transparent 40px
+            );
+            box-shadow: 0 0 5px rgba(255, 255, 255, 0.5);
+            z-index: 5;
+        }
+        .lane-divider:nth-child(1) { top: 50%; }
+        .direction-marker {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-color: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            color: #333;
+            z-index: 15;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.3);
+        }
+        .direction-marker.incoming {
+            top: 30%;
+            left: 20px;
+        }
+        .direction-marker.outgoing {
+            top: 70%;
+            left: 20px;
+        }
+        .direction-marker::before {
+            content: '→';
+            font-size: 20px;
+        }
+        .direction-marker.outgoing::before {
+            content: '←';
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 20px;
+            background-color: #f8f8f8;
+            border-radius: 5px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .control-group {
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .neural-network {
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            height: 200px;
+            margin: 20px 0;
+            background: #f8f8f8;
+            padding: 20px;
+            border-radius: 10px;
+            position: relative;
+        }
+        .neural-network::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, transparent 48%, #4CAF50 49%, #4CAF50 51%, transparent 52%);
+            opacity: 0.1;
+            pointer-events: none;
+        }
+        .layer {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            position: relative;
+        }
+        .neuron {
+            width: 40px;
+            height: 40px;
+            background-color: #4CAF50;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+        .neuron:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+        }
+        .neuron.active {
+            background-color: #2196F3;
+            animation: pulse 1s infinite;
+        }
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); }
+        }
+        .traffic-light {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: red;
+            box-shadow: 0 0 20px rgba(255,0,0,0.5);
+            transition: all 0.3s ease;
+            z-index: 20;
+        }
+        .traffic-light::before {
+            content: '';
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 20px;
+            height: 30px;
+            background-color: #333;
+            border-radius: 5px 5px 0 0;
+        }
+        .traffic-light::after {
+            content: '';
+            position: absolute;
+            top: -60px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 40px;
+            height: 30px;
+            background-color: #333;
+            border-radius: 5px;
+        }
+        .car {
+            width: 60px;
+            height: 30px;
+            background-color: #2196F3;
+            position: absolute;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+            z-index: 10;
+            transform: translateY(-50%);
+            will-change: transform, left;
+            pointer-events: none;
+        }
+        .car::before {
+            content: '';
+            position: absolute;
+            top: 5px;
+            left: 10px;
+            width: 20px;
+            height: 10px;
+            background-color: rgba(255,255,255,0.5);
+            border-radius: 2px;
+        }
+        .car::after {
+            content: '';
+            position: absolute;
+            top: 5px;
+            right: 10px;
+            width: 10px;
+            height: 10px;
+            background-color: rgba(255,255,255,0.5);
+            border-radius: 2px;
+        }
+        .car.sedan {
+            height: 25px;
+            border-radius: 8px 8px 0 0;
+        }
+        .car.sedan::before {
+            height: 8px;
+            top: 4px;
+        }
+        .car.suv {
+            height: 35px;
+            border-radius: 5px;
+        }
+        .car.suv::before {
+            height: 12px;
+            top: 6px;
+        }
+        .car.truck {
+            width: 80px;
+            height: 30px;
+            border-radius: 5px;
+        }
+        .car.truck::before {
+            width: 30px;
+            height: 15px;
+        }
+        .car.motorcycle {
+            width: 40px;
+            height: 20px;
+            border-radius: 10px;
+        }
+        .car.motorcycle::before {
+            width: 15px;
+            height: 8px;
+        }
+        .car.motorcycle::after {
+            width: 8px;
+            height: 8px;
+        }
+        .car .headlight {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            background-color: rgba(255, 255, 200, 0.8);
+            border-radius: 50%;
+            top: 5px;
+            right: 5px;
+            box-shadow: 0 0 5px rgba(255, 255, 200, 0.8);
+        }
+        .car .taillight {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            background-color: rgba(255, 0, 0, 0.8);
+            border-radius: 50%;
+            top: 5px;
+            left: 5px;
+            box-shadow: 0 0 5px rgba(255, 0, 0, 0.8);
+        }
+        .car .wheel {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: #333;
+            border-radius: 50%;
+            bottom: -4px;
+        }
+        .car .wheel-front {
+            right: 10px;
+        }
+        .car .wheel-back {
+            left: 10px;
+        }
+        .car.truck .wheel-front {
+            right: 15px;
+        }
+        .car.truck .wheel-back {
+            left: 15px;
+        }
+        .car.motorcycle .wheel-front {
+            right: 5px;
+        }
+        .car.motorcycle .wheel-back {
+            left: 5px;
+        }
+        .car.motorcycle .wheel {
+            width: 6px;
+            height: 6px;
+            bottom: -3px;
+        }
+        .road-side {
+            position: absolute;
+            width: 100%;
+            height: 20px;
+            background: linear-gradient(to bottom, #8B4513, #654321);
+        }
+        .road-side.top {
+            top: 0;
+        }
+        .road-side.bottom {
+            bottom: 0;
+        }
+        .road-side::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: repeating-linear-gradient(
+                90deg,
+                rgba(255, 255, 255, 0.3) 0px,
+                rgba(255, 255, 255, 0.3) 10px,
+                transparent 10px,
+                transparent 20px
+            );
+            transform: translateY(-50%);
+        }
+        .road-sign {
+            position: absolute;
+            width: 30px;
+            height: 30px;
+            background-color: #f8f8f8;
+            border: 2px solid #333;
+            border-radius: 5px;
+            z-index: 15;
+        }
+        .road-sign::before {
+            content: '';
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 5px;
+            height: 10px;
+            background-color: #333;
+        }
+        .road-sign.stop {
+            top: 30%;
+            left: 380px;
+            background-color: #ff0000;
+        }
+        .road-sign.yield {
+            top: 70%;
+            left: 380px;
+            background-color: #ffff00;
+        }
+        button {
+            padding: 12px 24px;
+            margin: 5px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 16px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+        button:hover {
+            background-color: #45a049;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .slider-container {
+            margin: 10px 0;
+        }
+        .slider {
+            width: 100%;
+            height: 8px;
+            border-radius: 4px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 20px;
+        }
+        .stat-box {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        .stat-label {
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Traffic Flow Prediction Simulation</h1>
+        <div class="neural-network">
+            <div class="layer" id="input-layer">
+                <div class="neuron" onclick="toggleNeuron(this)">1</div>
+                <div class="neuron" onclick="toggleNeuron(this)">2</div>
+                <div class="neuron" onclick="toggleNeuron(this)">3</div>
+            </div>
+            <div class="layer" id="hidden-layer">
+                <div class="neuron" onclick="toggleNeuron(this)">4</div>
+                <div class="neuron" onclick="toggleNeuron(this)">5</div>
+            </div>
+            <div class="layer" id="output-layer">
+                <div class="neuron" onclick="toggleNeuron(this)">6</div>
+            </div>
+        </div>
+        <div class="simulation-area" id="simulation-area">
+            <div class="road"></div>
+            <div class="road-side top"></div>
+            <div class="road-side bottom"></div>
+            <div class="lane"></div>
+            <div class="lane-divider"></div>
+            <div class="lane"></div>
+            <div class="direction-marker incoming"></div>
+            <div class="direction-marker outgoing"></div>
+            <div class="road-sign stop"></div>
+            <div class="road-sign yield"></div>
+            <div class="traffic-light" id="traffic-light"></div>
+        </div>
+        <div class="controls">
+            <div class="control-group">
+                <h3>Simulation Controls</h3>
+                <button onclick="startSimulation()" title="Start the traffic simulation">▶ Start Traffic Simulation</button>
+                <button onclick="resetSimulation()" title="Reset all simulation parameters to default">⟳ Reset Simulation</button>
+                <button onclick="togglePause()" title="Pause or resume the current simulation">⏯ Pause/Resume Simulation</button>
+            </div>
+            <div class="control-group">
+                <h3>Traffic Parameters</h3>
+                <div class="slider-container">
+                    <label>Car Speed: <span id="speed-value">2</span></label>
+                    <input type="range" min="1" max="5" value="2" class="slider" id="speed-slider" oninput="updateSpeed(this.value)">
+                </div>
+                <div class="slider-container">
+                    <label>Traffic Density: <span id="density-value">0.3</span></label>
+                    <input type="range" min="0.1" max="0.9" step="0.1" value="0.3" class="slider" id="density-slider" oninput="updateDensity(this.value)">
+                </div>
+                <div class="slider-container">
+                    <label>Vehicle Mix: <span id="mix-value">0.5</span></label>
+                    <input type="range" min="0" max="1" step="0.1" value="0.5" class="slider" id="mix-slider" oninput="updateMix(this.value)">
+                </div>
+            </div>
+            <div class="control-group">
+                <h3>Statistics</h3>
+                <div class="stats">
+                    <div class="stat-box">
+                        <div class="stat-value" id="cars-count">0</div>
+                        <div class="stat-label">Active Cars</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="avg-speed">0</div>
+                        <div class="stat-label">Avg Speed (km/h)</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="stat-value" id="prediction-value">0</div>
+                        <div class="stat-label">Predicted Flow</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        let cars = [];
+        let trafficLightState = 'red';
+        let simulationInterval;
+        let isPaused = false;
+        let carSpeed = 2;
+        let trafficDensity = 0.3;
+        let vehicleMix = 0.5;
+        let totalCars = 0;
+        let totalSpeed = 0;
+        let lanes = [0.30, 0.70];
+        let laneOccupancy = [false, false];
+        let laneVehicles = [[], []];
+        let lastTimestamp = 0;
+        const FRAME_RATE = 1000 / 60;
+        const MIN_SPACING = 100;
+        const DECELERATION_DISTANCE = 150;
+        const TRAFFIC_LIGHT_POSITION = 400;
+        const STOP_DISTANCE = 80;
+        const YELLOW_LIGHT_DURATION = 1000;
+        let trafficLightTimer = null;
+        let yellowLightActive = false;
+        let isNight = false;
+        let weatherCondition = 'clear';
+        function toggleNeuron(neuron) {
+            neuron.classList.toggle('active');
+            updateNeuralNetwork();
+        }
+        function updateSpeed(value) {
+            carSpeed = parseInt(value);
+            document.getElementById('speed-value').textContent = value;
+        }
+        function updateDensity(value) {
+            trafficDensity = parseFloat(value);
+            document.getElementById('density-value').textContent = value;
+        }
+        function updateMix(value) {
+            vehicleMix = parseFloat(value);
+            document.getElementById('mix-value').textContent = value;
+        }
+        function toggleDayNight() {
+            isNight = !isNight;
+            const simulationArea = document.getElementById('simulation-area');
+            if (isNight) {
+                simulationArea.style.backgroundColor = '#1a1a2e';
+                document.querySelector('.road').style.background = 'linear-gradient(to bottom, #1a1a2e, #16213e)';
+                document.querySelectorAll('.car').forEach(car => {
+                    const headlight = car.querySelector('.headlight');
+                    if (headlight) {
+                        headlight.style.opacity = '1';
+                        headlight.style.boxShadow = '0 0 10px rgba(255, 255, 200, 0.8)';
+                    }
+                });
+            } else {
+                simulationArea.style.backgroundColor = '#2c3e50';
+                document.querySelector('.road').style.background = 'linear-gradient(to bottom, #34495e, #2c3e50)';
+                document.querySelectorAll('.car').forEach(car => {
+                    const headlight = car.querySelector('.headlight');
+                    if (headlight) {
+                        headlight.style.opacity = '0.5';
+                        headlight.style.boxShadow = '0 0 5px rgba(255, 255, 200, 0.5)';
+                    }
+                });
+            }
+        }
+        function setWeather(condition) {
+            weatherCondition = condition;
+            const simulationArea = document.getElementById('simulation-area');
+            const existingWeather = document.querySelector('.weather-effect');
+            if (existingWeather) {
+                existingWeather.remove();
+            }
+            const weatherEffect = document.createElement('div');
+            weatherEffect.className = 'weather-effect';
+            switch(condition) {
+                case 'rain':
+                    weatherEffect.style.position = 'absolute';
+                    weatherEffect.style.top = '0';
+                    weatherEffect.style.left = '0';
+                    weatherEffect.style.width = '100%';
+                    weatherEffect.style.height = '100%';
+                    weatherEffect.style.background = 'linear-gradient(to bottom, transparent, rgba(0,0,255,0.1))';
+                    weatherEffect.style.animation = 'rain 0.5s linear infinite';
+                    simulationArea.appendChild(weatherEffect);
+                    break;
+                case 'snow':
+                    weatherEffect.style.position = 'absolute';
+                    weatherEffect.style.top = '0';
+                    weatherEffect.style.left = '0';
+                    weatherEffect.style.width = '100%';
+                    weatherEffect.style.height = '100%';
+                    weatherEffect.style.background = 'radial-gradient(white, transparent 60%)';
+                    weatherEffect.style.animation = 'snow 3s linear infinite';
+                    simulationArea.appendChild(weatherEffect);
+                    break;
+                case 'fog':
+                    weatherEffect.style.position = 'absolute';
+                    weatherEffect.style.top = '0';
+                    weatherEffect.style.left = '0';
+                    weatherEffect.style.width = '100%';
+                    weatherEffect.style.height = '100%';
+                    weatherEffect.style.background = 'rgba(255,255,255,0.3)';
+                    simulationArea.appendChild(weatherEffect);
+                    break;
+                default:
+                    break;
+            }
+        }
+        function getRandomVehicleType() {
+            const rand = Math.random();
+            if (rand < 0.4) return 'sedan';
+            if (rand < 0.7) return 'suv';
+            if (rand < 0.85) return 'truck';
+            return 'motorcycle';
+        }
+        function findAvailableLane() {
+            const availableLanes = [];
+            const direction = Math.random() > 0.5 ? 'incoming' : 'outgoing';
+            const laneIndex = direction === 'incoming' ? 0 : 1;
+            const laneCars = laneVehicles[laneIndex];
+            if (laneCars.length === 0) {
+                availableLanes.push(laneIndex);
+            } else {
+                const lastCar = laneCars[laneCars.length - 1];
+                const lastCarPos = parseFloat(lastCar.style.left);
+                const isIncoming = laneIndex === 0;
+                if (isIncoming && lastCarPos > MIN_SPACING + 80) {
+                    availableLanes.push(laneIndex);
+                } else if (!isIncoming && lastCarPos < 800 - MIN_SPACING - 80) {
+                    availableLanes.push(laneIndex);
+                }
+            }
+            if (availableLanes.length > 0) {
+                return availableLanes[0];
+            }
+            return -1;
+        }
+        function moveCars(timestamp) {
+            if (!lastTimestamp) lastTimestamp = timestamp;
+            const deltaTime = timestamp - lastTimestamp;
+            if (deltaTime < FRAME_RATE) {
+                requestAnimationFrame(moveCars);
+                return;
+            }
+            lastTimestamp = timestamp;
+            let currentSpeed = 0;
+            for (let laneIndex = 0; laneIndex < lanes.length; laneIndex++) {
+                const laneCars = laneVehicles[laneIndex];
+                const isIncoming = laneIndex === 0;
+                laneCars.sort((a, b) => {
+                    const posA = parseFloat(a.style.left);
+                    const posB = parseFloat(b.style.left);
+                    return isIncoming ? posA - posB : posB - posA;
+                });
+                for (let i = 0; i < laneCars.length; i++) {
+                    const car = laneCars[i];
+                    const currentLeft = parseFloat(car.style.left);
+                    const isIncoming = car.dataset.direction === 'incoming';
+                    const lanePosition = lanes[laneIndex];
+                    car.style.top = ${lanePosition * 100}px;
+                    if ((isIncoming && currentLeft < 800) || (!isIncoming && currentLeft > 0)) {
+                        let canMove = true;
+                        const carWidth = car.classList.contains('truck') ? 80 : 
+                                        car.classList.contains('motorcycle') ? 40 : 60;
+                        if (i < laneCars.length - 1) {
+                            const nextCar = laneCars[i + 1];
+                            const nextLeft = parseFloat(nextCar.style.left);
+                            const distance = isIncoming ? 
+                                nextLeft - currentLeft : 
+                                currentLeft - nextLeft;
+                            if (distance < carWidth + MIN_SPACING) {
+                                if (distance < carWidth + MIN_SPACING/2) {
+                                    canMove = 0.1;
+                                } else {
+                                    const slowdownFactor = Math.max(0.2, (distance - carWidth) / MIN_SPACING);
+                                    canMove = slowdownFactor;
+                                }
+                            }
+                        }
+                        let shouldStop = false;
+                        let isInStopZone = false;
+                        if (isIncoming && currentLeft < TRAFFIC_LIGHT_POSITION && 
+                            currentLeft > TRAFFIC_LIGHT_POSITION - STOP_DISTANCE) {
+                            isInStopZone = true;
+                            if (trafficLightState === 'red') {
+                                shouldStop = true;
+                            } else if (yellowLightActive) {
+                                shouldStop = Math.random() > 0.7;
+                            }
+                        } else if (!isIncoming && currentLeft > TRAFFIC_LIGHT_POSITION && 
+                                  currentLeft < TRAFFIC_LIGHT_POSITION + STOP_DISTANCE) {
+                            isInStopZone = true;
+                            if (trafficLightState === 'red') {
+                                shouldStop = true;
+                            } else if (yellowLightActive) {
+                                shouldStop = Math.random() > 0.7;
+                            }
+                        }
+                        let baseSpeed = carSpeed;
+                        if (shouldStop) {
+                            baseSpeed = 0;
+                        } else if (isInStopZone && yellowLightActive) {
+                            baseSpeed *= 0.5;
+                        }
+                        if (weatherCondition === 'rain') {
+                            baseSpeed *= 0.8;
+                        } else if (weatherCondition === 'snow') {
+                            baseSpeed *= 0.6;
+                        } else if (weatherCondition === 'fog') {
+                            baseSpeed *= 0.9;
+                        }
+                        const actualSpeed = baseSpeed * (canMove === true ? 1 : canMove);
+                        car.style.transition = 'none';
+                        if (isIncoming) {
+                            car.style.left = ${currentLeft + actualSpeed}px;
+                        } else {
+                            car.style.left = ${currentLeft - actualSpeed}px;
+                        }
+                        car.offsetHeight;
+                        car.style.transition = 'transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)';
+                        currentSpeed += actualSpeed;
+                    } else {
+                        car.remove();
+                        laneCars.splice(i, 1);
+                        cars = cars.filter(c => c !== car);
+                        i--;
+                    }
+                }
+            }
+            document.getElementById('cars-count').textContent = cars.length;
+            if (cars.length > 0) {
+                totalSpeed = currentSpeed / cars.length;
+                document.getElementById('avg-speed').textContent = Math.round(totalSpeed * 20);
+            }
+            requestAnimationFrame(moveCars);
+        }
+        function createCar() {
+            const laneIndex = findAvailableLane();
+            if (laneIndex === -1) return null;
+            const lanePosition = lanes[laneIndex];
+            const vehicleType = getRandomVehicleType();
+            const car = document.createElement('div');
+            car.className = car ${vehicleType};
+            const isIncoming = laneIndex === 0;
+            if (isIncoming) {
+                car.style.left = '-80px';
+            } else {
+                car.style.left = '800px';
+                car.style.transform = 'translateY(-50%) scaleX(-1)';
+            }
+            car.style.top = ${lanePosition * 100}px;
+            car.style.opacity = '1';
+            if (!isIncoming) {
+                car.style.transform = 'translateY(-50%) scaleX(-1)';
+            } else {
+                car.style.transform = 'translateY(-50%)';
+            }
+            let color;
+            if (vehicleType === 'sedan') {
+                color = hsl(${Math.random() * 60 + 180}, 70%, 50%);
+            } else if (vehicleType === 'suv') {
+                color = hsl(${Math.random() * 60 + 120}, 70%, 50%);
+            } else if (vehicleType === 'truck') {
+                color = hsl(${Math.random() * 60 + 30}, 70%, 50%);
+            } else {
+                color = hsl(${Math.random() * 360}, 70%, 50%);
+            }
+            car.style.backgroundColor = color;
+            const headlight = document.createElement('div');
+            headlight.className = 'headlight';
+            car.appendChild(headlight);
+            const taillight = document.createElement('div');
+            taillight.className = 'taillight';
+            car.appendChild(taillight);
+            const wheelFront = document.createElement('div');
+            wheelFront.className = 'wheel wheel-front';
+            car.appendChild(wheelFront);
+            const wheelBack = document.createElement('div');
+            wheelBack.className = 'wheel wheel-back';
+            car.appendChild(wheelBack);
+            if (isNight) {
+                headlight.style.opacity = '1';
+                headlight.style.boxShadow = '0 0 10px rgba(255, 255, 200, 0.8)';
+            } else {
+                headlight.style.opacity = '0.5';
+                headlight.style.boxShadow = '0 0 5px rgba(255, 255, 200, 0.5)';
+            }
+            document.getElementById('simulation-area').appendChild(car);
+            car.dataset.lane = laneIndex;
+            car.dataset.direction = isIncoming ? 'incoming' : 'outgoing';
+            laneVehicles[laneIndex].push(car);
+            cars.push(car);
+            totalCars++;
+            return car;
+        }
+        function updateNeuralNetwork() {
+            const prediction = Math.floor((cars.length * carSpeed * trafficDensity) * 10);
+            document.getElementById('prediction-value').textContent = prediction;
+        }
+        function updateTrafficLight() {
+            const trafficLight = document.getElementById('traffic-light');
+            if (trafficLightTimer) {
+                clearTimeout(trafficLightTimer);
+            }
+            if (trafficLightState === 'red') {
+                trafficLightState = 'yellow';
+                yellowLightActive = true;
+                trafficLight.style.backgroundColor = 'yellow';
+                trafficLight.style.boxShadow = '0 0 20px rgba(255,255,0,0.5)';
+                trafficLightTimer = setTimeout(() => {
+                    trafficLightState = 'green';
+                    yellowLightActive = false;
+                    trafficLight.style.backgroundColor = 'green';
+                    trafficLight.style.boxShadow = '0 0 20px rgba(0,255,0,0.5)';
+                }, YELLOW_LIGHT_DURATION);
+            } 
+            else if (trafficLightState === 'green') {
+                trafficLightState = 'yellow';
+                yellowLightActive = true;
+                trafficLight.style.backgroundColor = 'yellow';
+                trafficLight.style.boxShadow = '0 0 20px rgba(255,255,0,0.5)';
+                trafficLightTimer = setTimeout(() => {
+                    trafficLightState = 'red';
+                    yellowLightActive = false;
+                    trafficLight.style.backgroundColor = 'red';
+                    trafficLight.style.boxShadow = '0 0 20px rgba(255,0,0,0.5)';
+                }, YELLOW_LIGHT_DURATION);
+            }
+        }
+        function togglePause() {
+            isPaused = !isPaused;
+            if (isPaused) {
+                clearInterval(simulationInterval);
+                if (trafficLightTimer) {
+                    clearTimeout(trafficLightTimer);
+                }
+            } else {
+                startSimulation();
+            }
+        }
+        function startSimulation() {
+            if (simulationInterval) {
+                clearInterval(simulationInterval);
+            }
+            if (trafficLightTimer) {
+                clearTimeout(trafficLightTimer);
+            }
+            requestAnimationFrame(moveCars);
+            simulationInterval = setInterval(() => {
+                if (!isPaused) {
+                    if (Math.random() > (1 - trafficDensity)) {
+                        createCar();
+                    }
+                    if (Math.random() > 0.7) {
+                        updateNeuralNetwork();
+                    }
+                }
+            }, 200);
+            setInterval(() => {
+                if (!isPaused) {
+                    updateTrafficLight();
+                }
+            }, 5000);
+        }
+        function resetSimulation() {
+            if (simulationInterval) {
+                clearInterval(simulationInterval);
+            }
+            if (trafficLightTimer) {
+                clearTimeout(trafficLightTimer);
+            }
+            cars.forEach(car => car.remove());
+            cars = [];
+            laneVehicles = [[], []];
+            document.getElementById('traffic-light').style.backgroundColor = 'red';
+            document.getElementById('traffic-light').style.boxShadow = '0 0 20px rgba(255,0,0,0.5)';
+            trafficLightState = 'red';
+            yellowLightActive = false;
+            document.getElementById('prediction-value').textContent = '0';
+            document.getElementById('cars-count').textContent = '0';
+            document.getElementById('avg-speed').textContent = '0';
+            totalCars = 0;
+            totalSpeed = 0;
+            isPaused = false;
+            laneOccupancy = [false, false];
+        }
+        document.addEventListener('DOMContentLoaded', function() {
+            const controlsDiv = document.querySelector('.controls');
+            const weatherControls = document.createElement('div');
+            weatherControls.className = 'control-group';
+            weatherControls.innerHTML = `
+                <h3>Environment</h3>
+                <button onclick="toggleDayNight()" title="Toggle between day and night">🌓 Day/Night</button>
+                <button onclick="setWeather('rain')" title="Set rainy weather">🌧 Rain</button>
+                <button onclick="setWeather('snow')" title="Set snowy weather">❄ Snow</button>
+                <button onclick="setWeather('fog')" title="Set foggy weather">🌫 Fog</button>
+            `;
+            controlsDiv.appendChild(weatherControls);
+            const style = document.createElement('style');
+            style.textContent = `
+                @keyframes rain {
+                    0% { background-position: 0 0; }
+                    100% { background-position: 0 20px; }
+                }
+                @keyframes snow {
+                    0% { background-position: 0 0; }
+                    100% { background-position: 20px 20px; }
+                }
+            `;
+            document.head.appendChild(style);
+        });
+    </script>
+</body>
+</html>
